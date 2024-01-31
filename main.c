@@ -50,7 +50,8 @@ typedef enum TokenType
     RightParenthesis, // 有括号
     Eq,               // 等号
     Func,             // 函数
-    Var               // 变量
+    Var,              // 变量
+    Fraction          // 分数
 } TokenType;
 
 typedef struct Token
@@ -269,7 +270,7 @@ int parse_to_token_list(char *str)
                     break;
                 case 5: // 浮点数
                     token_list[j].type = Float;
-                    float *p = &token_list[j].value;
+                    float *p = (float *)&token_list[j].value;
                     *p = strtof(&str[i], NULL);
                     break;
                 default:
@@ -337,7 +338,27 @@ int parse_to_token_list(char *str)
     return j;
 }
 
-void print_tokens()
+void print_terimal_token(Token *t, bool newline)
+{
+    switch (t->type)
+    {
+    case Int:
+        printf("Int(%d)", (int)t->value);
+        break;
+    case Float:
+        float *p = (float *)&t->value;
+        printf("Float(%f)", *p);
+        break;
+    case Var:
+        printf("Var(%s)", (char *)t->value);
+    default:
+        break;
+    }
+    if (newline)
+        printf("\n");
+}
+
+void print_token_list()
 {
     int i;
     Token this_token;
@@ -346,10 +367,10 @@ void print_tokens()
         switch (token_list[i].type)
         {
         case Int:
-            printf("Int(%d)", token_list[i].value);
+            printf("Int(%d)", (int)token_list[i].value);
             break;
         case Float:
-            float *p = &token_list[i].value;
+            float *p = (float *)&token_list[i].value;
             printf("Float(%f)", *p);
             break;
         case Add:
@@ -368,22 +389,22 @@ void print_tokens()
             printf("/");
             break;
         case Mod:
-            printf("%");
+            printf("%%");
             break;
         case Pow:
             printf("^");
             break;
         case Func:
-            printf("Func{name: %s}", token_list[i].value);
+            printf("Func{name: %s}", (char *)token_list[i].value);
             break;
         case Var:
-            printf("Var{name: %s}", token_list[i].value);
+            printf("Var{name: %s}", (char *)token_list[i].value);
             break;
         case LeftParenthesis:
-            printf("( Layer: %d", token_list[i].value);
+            printf("( Layer: %d", (int)token_list[i].value);
             break;
         case RightParenthesis:
-            printf(") Layer: %d", token_list[i].value);
+            printf(") Layer: %d", (int)token_list[i].value);
             break;
         case Eq:
             printf("=");
@@ -401,46 +422,7 @@ typedef struct AST_Node
     Token *token;
     struct AST_Node *left;
     struct AST_Node *right;
-};
-
-typedef struct AST_Node AST_Node;
-
-bool expect(int i, TokenType type)
-{
-    if (i + 1 == tokens_len)
-    {
-        return false;
-    }
-    return token_list[i + 1].type == type;
-}
-
-AST_Node *parse_to_ast(int token_ind)
-{
-    AST_Node *node = malloc(sizeof(AST_Node));
-    node->left = NULL;
-    node->right = NULL;
-    node->token = NULL;
-    switch (token_list[token_ind].type)
-    {
-    case Int:
-        if (expect(token_ind, Add))
-        {
-            // 操作符
-            AST_Node *temp = malloc(sizeof(AST_Node));
-            temp->left = temp->right = NULL;
-            temp->token = &token_list[token_ind];
-            node->left = temp;
-            node->token = &token_list[token_ind + 1];
-            node->right = parse_to_ast(token_ind + 2);
-        }
-        else
-        {
-            // Int
-            node->token = &token_list[token_ind];
-        }
-    }
-    return node;
-}
+} AST_Node;
 
 typedef struct BindingPower
 {
@@ -454,7 +436,7 @@ BindingPower prefix_binding_power(TokenType op)
     if (op == Neg)
     {
         bp.left = -1;
-        bp.right = 5;
+        bp.right = 7;
     }
     return bp;
 }
@@ -464,20 +446,24 @@ BindingPower infix_binding_power(TokenType op)
     BindingPower bp;
     if (op == Add || op == Sub)
     {
-        bp.left = 1;
-        bp.right = 2;
-    }
-    else if (op == Mul || op == Div)
-    {
         bp.left = 3;
         bp.right = 4;
     }
+    else if (op == Mul || op == Div || op == Mod)
+    {
+        bp.left = 5;
+        bp.right = 6;
+    }
     else if (op == Pow)
     {
-        bp.left = 6;
-        bp.right = 5;
+        bp.left = 9;
+        bp.right = 8;
     }
-
+    else if (op == Eq)
+    {
+        bp.left = 1;
+        bp.right = 2;
+    }
     else
     {
         bp.left = -1;
@@ -553,6 +539,15 @@ AST_Node *expr_bp(int min_bp)
     return lhs;
 }
 
+AST_Node *parse_to_ast()
+{
+    gtoken_ind = 0;
+    AST_Node *node;
+    node = expr_bp(0);
+    gtoken_ind = 0;
+    return node;
+}
+
 void print_tree_branch(int layer)
 {
     if (layer == 0)
@@ -573,18 +568,18 @@ void print_ast(AST_Node *node, int layer)
     // Atom
     if (node->token->type == Int)
     {
-        printf("Int(%d)\n", node->token->value);
+        printf("Int(%d)\n", (int)node->token->value);
         return; // ！
     }
     else if (node->token->type == Float)
     {
-        float *fp = &node->token->value;
+        float *fp = (float *)&node->token->value;
         printf("Float(%f)\n", *fp);
         return;
     }
     else if (node->token->type == Var)
     {
-        printf("Var(%s)\n", node->token->value);
+        printf("Var(%s)\n", (char *)node->token->value);
         return;
     }
 
@@ -610,8 +605,14 @@ void print_ast(AST_Node *node, int layer)
     case Pow:
         printf("^");
         break;
+    case Mod:
+        printf("%%");
+        break;
     case Func:
-        printf("Func(%s)", node->token->value);
+        printf("Func(%s)", (char *)node->token->value);
+        break;
+    case Eq:
+        printf("=");
         break;
     default:
         printf("还没实现");
@@ -626,19 +627,110 @@ void print_ast(AST_Node *node, int layer)
     print_ast(node->right, layer + 1);
 }
 
+void copy_token(Token *from, Token *to)
+{
+    to->type = from->type;
+    to->value = from->value;
+}
+
+AST_Node *add_polymorphism(const AST_Node *base_l, const AST_Node *base_r)
+{
+    AST_Node *res;
+    res = malloc(sizeof(AST_Node));
+    res->left = res->right = NULL;
+    Token *l, *r;
+    l = malloc(sizeof(Token));
+    r = malloc(sizeof(Token));
+    copy_token(base_l->token, l);
+    copy_token(base_r->token, r);
+    if (l->type == Float && r->type == Float)
+    {
+        float *lp, *rp;
+        lp = (float *)&l->value;
+        rp = (float *)&r->value;
+        *lp += *rp;
+        free(r);
+        res->token = l;
+        return res;
+    }
+    else if (l->type == Int && r->type == Float)
+    {
+        float *rp;
+        rp = (float *)&r->value;
+        *rp += (int)l->value;
+        free(l);
+        res->token = r;
+        return res;
+    }
+    else if (l->type == Float && r->type == Int)
+    {
+        float *lp;
+        lp = (float *)&l->value;
+        *lp += (int)r->value;
+        free(r);
+        res->token = l;
+        return res;
+    }
+    else if (l->type == Int && r->type == Int)
+    {
+        int *p = (int *)&l->value;
+        *p = (int)l->value + (int)r->value;
+        free(r);
+        res->token = l;
+        return res;
+    }
+    else
+    {
+        return NULL;
+    }
+}
+
+AST_Node *recu_calc(AST_Node *node)
+{
+    if (node->token->type == Int || node->token->type == Float || node->token->type == Var)
+    {
+        // 基本情况
+        return node;
+    }
+    // 递归情况
+
+    switch (node->token->type)
+    {
+    case Add:
+        return add_polymorphism(recu_calc(node->left), recu_calc(node->right));
+
+    default:
+        break;
+    }
+}
+
+Token *calc(AST_Node *node)
+{
+    if (node == NULL)
+        return NULL;
+    if (node->token->type == Eq)
+    {
+        // 方程
+        return NULL;
+    }
+    return recu_calc(node)->token;
+}
+
 int main()
 {
-    char str[] = "2^sin(-3^4^5)";
-    int res = parse_to_token_list(str);
-    if (res == -1)
+    char str[] = "1+2+3";
+    int state_code = parse_to_token_list(str);
+    if (state_code == -1)
     {
         return -1;
     }
     printf("Tokens:\n");
-    print_tokens(res);
-    // AST_Node *node = parse_to_ast(0);
+    print_token_list();
     AST_Node *node = expr_bp(0);
     printf("\nAST:\n");
     print_ast(node, 0);
+    Token *res_token = calc(node);
+    printf("\ncalc result:\n");
+    print_terimal_token(res_token, true);
     return 0;
 }
