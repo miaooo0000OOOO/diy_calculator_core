@@ -2,6 +2,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <assert.h>
+
+#define TAB "│ "
+#define FOLD_TAB "├─"
 
 bool char_in_num(char c)
 {
@@ -20,7 +24,7 @@ bool char_in_alphabet(char c)
 
 bool char_in_alphabet_and_underline(char c)
 {
-    char_in_alphabet(c) || c == '_';
+    return char_in_alphabet(c) || c == '_';
 }
 
 bool char_in_hex(char c)
@@ -56,6 +60,24 @@ typedef struct Token
 } Token;
 
 Token token_list[1024] = {0};
+int tokens_len = 0;
+int gtoken_ind = 0;
+
+Token *peek_token()
+{
+    if (gtoken_ind >= tokens_len)
+        return NULL;
+    return &token_list[gtoken_ind];
+}
+
+Token *next_token()
+{
+    if (gtoken_ind >= tokens_len)
+        return NULL;
+    Token *temp = &token_list[gtoken_ind];
+    gtoken_ind++;
+    return temp;
+}
 
 // adja_char_stynax[i][j] 是否合法
 // 字符映射i，上一个字符映射j
@@ -156,21 +178,7 @@ u8 str_is_int_or_float(char *str)
     return 2; // 十进制整数
 }
 
-long long parse_int(char *str)
-{
-}
-
-double parse_float(char *str)
-{
-}
-
-typedef enum ParseResult
-{
-    Ok,
-    Err
-} ParseResult;
-
-ParseResult parse_to_token_list(char *str)
+int parse_to_token_list(char *str)
 {
     usize len = strlen(str);
     usize i;
@@ -183,12 +191,13 @@ ParseResult parse_to_token_list(char *str)
         c = str[i];
         if (c == ' ')
         {
+            j--;
             continue;
         }
         if (!check_adja_char_stynax(c, prev_c))
         {
             // 语法错误
-            return Err;
+            return -1;
         }
         switch (c)
         {
@@ -201,13 +210,13 @@ ParseResult parse_to_token_list(char *str)
             {
                 token_list[j].type = Sub;
                 token_list[j].value = 0;
-                break;
             }
             else // 是负号的情况
             {
                 token_list[j].type = Neg;
                 token_list[j].value = 0;
             }
+            break;
 
         case '*':
             token_list[j].type = Mul;
@@ -234,7 +243,7 @@ ParseResult parse_to_token_list(char *str)
             if (parenthesis_layer == 0)
             {
                 // 括号不匹配
-                return Err;
+                return -1;
             }
             parenthesis_layer--;
             token_list[j].type = RightParenthesis;
@@ -243,7 +252,7 @@ ParseResult parse_to_token_list(char *str)
         case '=':
             if (parenthesis_layer != 0)
             {
-                return Err;
+                return -1;
                 // 括号不匹配
             }
             token_list[j].type = Eq;
@@ -256,7 +265,7 @@ ParseResult parse_to_token_list(char *str)
                 switch (str_is_int_or_float(&str[i]))
                 {
                 case 0: // Err
-                    return Err;
+                    return -1;
                     break;
                 case 5: // 浮点数
                     token_list[j].type = Float;
@@ -282,9 +291,9 @@ ParseResult parse_to_token_list(char *str)
 
                 u8 *name = malloc(sizeof(u8) * 16);
                 usize k;
-                for (k = i; k < len; k++)
+                for (k = i; k < len + 1; k++)
                 {
-                    if (!char_in_alphabet_and_underline(k))
+                    if (!char_in_alphabet_and_underline(str[k]))
                     {
                         name[k - i] = '\0';
                         if (str[k] == '(') // 函数
@@ -296,13 +305,15 @@ ParseResult parse_to_token_list(char *str)
                             token_list[j].type = Var;
                         }
                         token_list[j].value = (usize)name;
+                        // printf("name:%s\n", name);
+                        break;
                     }
                     else
                     {
                         if (k - i >= 15)
                         {
                             // 变量名或函数名过长
-                            return Err;
+                            return -1;
                         }
                         name[k - i] = str[k];
                     }
@@ -315,20 +326,319 @@ ParseResult parse_to_token_list(char *str)
     if (!check_adja_char_stynax('\0', c))
     {
         // 语法错误
-        return Err;
+        return -1;
     }
     if (parenthesis_layer != 0)
     {
         // 括号不匹配
-        return Err;
+        return -1;
     }
-    return Ok;
+    tokens_len = j;
+    return j;
+}
+
+void print_tokens()
+{
+    int i;
+    Token this_token;
+    for (i = 0; i < tokens_len; i++)
+    {
+        switch (token_list[i].type)
+        {
+        case Int:
+            printf("Int(%d)", token_list[i].value);
+            break;
+        case Float:
+            float *p = &token_list[i].value;
+            printf("Float(%f)", *p);
+            break;
+        case Add:
+            printf("+");
+            break;
+        case Neg:
+            printf("Neg");
+            break;
+        case Sub:
+            printf("Sub");
+            break;
+        case Mul:
+            printf("*");
+            break;
+        case Div:
+            printf("/");
+            break;
+        case Mod:
+            printf("%");
+            break;
+        case Pow:
+            printf("^");
+            break;
+        case Func:
+            printf("Func{name: %s}", token_list[i].value);
+            break;
+        case Var:
+            printf("Var{name: %s}", token_list[i].value);
+            break;
+        case LeftParenthesis:
+            printf("( Layer: %d", token_list[i].value);
+            break;
+        case RightParenthesis:
+            printf(") Layer: %d", token_list[i].value);
+            break;
+        case Eq:
+            printf("=");
+            break;
+        default:
+            printf("还没实现");
+            break;
+        }
+        printf("\n");
+    }
+}
+
+typedef struct AST_Node
+{
+    Token *token;
+    struct AST_Node *left;
+    struct AST_Node *right;
+};
+
+typedef struct AST_Node AST_Node;
+
+bool expect(int i, TokenType type)
+{
+    if (i + 1 == tokens_len)
+    {
+        return false;
+    }
+    return token_list[i + 1].type == type;
+}
+
+AST_Node *parse_to_ast(int token_ind)
+{
+    AST_Node *node = malloc(sizeof(AST_Node));
+    node->left = NULL;
+    node->right = NULL;
+    node->token = NULL;
+    switch (token_list[token_ind].type)
+    {
+    case Int:
+        if (expect(token_ind, Add))
+        {
+            // 操作符
+            AST_Node *temp = malloc(sizeof(AST_Node));
+            temp->left = temp->right = NULL;
+            temp->token = &token_list[token_ind];
+            node->left = temp;
+            node->token = &token_list[token_ind + 1];
+            node->right = parse_to_ast(token_ind + 2);
+        }
+        else
+        {
+            // Int
+            node->token = &token_list[token_ind];
+        }
+    }
+    return node;
+}
+
+typedef struct BindingPower
+{
+    float left;
+    float right;
+} BindingPower;
+
+BindingPower prefix_binding_power(TokenType op)
+{
+    BindingPower bp;
+    if (op == Neg)
+    {
+        bp.left = -1;
+        bp.right = 5;
+    }
+    return bp;
+}
+
+BindingPower infix_binding_power(TokenType op)
+{
+    BindingPower bp;
+    if (op == Add || op == Sub)
+    {
+        bp.left = 1;
+        bp.right = 2;
+    }
+    else if (op == Mul || op == Div)
+    {
+        bp.left = 3;
+        bp.right = 4;
+    }
+    else if (op == Pow)
+    {
+        bp.left = 6;
+        bp.right = 5;
+    }
+
+    else
+    {
+        bp.left = -1;
+        bp.right = -1;
+    }
+    return bp;
+}
+
+// bp binding power
+AST_Node *expr_bp(int min_bp)
+{
+    AST_Node *rhs, *temp;
+    BindingPower bp;
+    AST_Node *lhs = malloc(sizeof(AST_Node));
+    Token *temp_token = next_token();
+    if (temp_token->type == Int || temp_token->type == Float || temp_token->type == Var)
+    {
+        // Atom
+        lhs->token = temp_token;
+        lhs->left = lhs->right = NULL;
+    }
+    else if (temp_token->type == LeftParenthesis)
+    {
+        // 括号
+        lhs = expr_bp(0);
+        assert(next_token()->type == RightParenthesis);
+    }
+    else if (temp_token->type == Func)
+    {
+        // 函数
+        assert(next_token()->type == LeftParenthesis);
+        rhs = expr_bp(0);
+        // lhs = &AST_Node{token: func, left: rhs, right: NULL}
+        lhs->token = temp_token;
+        lhs->left = rhs;
+        lhs->right = NULL;
+    }
+    else if (temp_token->type == Neg)
+    {
+        // 一元前缀运算符
+        BindingPower temp_bp = prefix_binding_power(temp_token->type);
+        rhs = expr_bp(temp_bp.right);
+        // lhs = &AST_Node{token: op, left: rhs, right: NULL}
+        lhs->token = temp_token;
+        lhs->left = rhs;
+        lhs->right = NULL;
+    }
+
+    for (;;)
+    {
+        Token *op = peek_token();
+        if (op == NULL)
+            break;
+
+        bp = infix_binding_power(op->type);
+        if (bp.left != -1 && bp.right != -1)
+        {
+            if (bp.left < min_bp)
+                break;
+            next_token();
+            rhs = expr_bp(bp.right);
+
+            // lhs = &AST_Node{token: op, left: lhs, right: rhs}
+            AST_Node *temp = malloc(sizeof(AST_Node));
+            temp->token = op;
+            temp->left = lhs;
+            temp->right = rhs;
+            lhs = temp;
+            continue;
+        }
+        break;
+    }
+    return lhs;
+}
+
+void print_tree_branch(int layer)
+{
+    if (layer == 0)
+        return;
+    int i;
+    for (i = 0; i < layer - 1; i++)
+        printf(TAB);
+    printf(FOLD_TAB);
+}
+
+void print_ast(AST_Node *node, int layer)
+{
+    int i;
+    if (node == NULL)
+        return;
+
+    print_tree_branch(layer);
+    // Atom
+    if (node->token->type == Int)
+    {
+        printf("Int(%d)\n", node->token->value);
+        return; // ！
+    }
+    else if (node->token->type == Float)
+    {
+        float *fp = &node->token->value;
+        printf("Float(%f)\n", *fp);
+        return;
+    }
+    else if (node->token->type == Var)
+    {
+        printf("Var(%s)\n", node->token->value);
+        return;
+    }
+
+    // 递归
+    printf("token: ");
+    switch (node->token->type)
+    {
+    case Add:
+        printf("+");
+        break;
+    case Sub:
+        printf("Sub");
+        break;
+    case Mul:
+        printf("*");
+        break;
+    case Div:
+        printf("/");
+        break;
+    case Neg:
+        printf("Neg");
+        break;
+    case Pow:
+        printf("^");
+        break;
+    case Func:
+        printf("Func(%s)", node->token->value);
+        break;
+    default:
+        printf("还没实现");
+        break;
+    }
+    printf("\n");
+    // for (i = 0; i < layer; i++)
+    //     printf(TAB);
+    print_ast(node->left, layer + 1);
+    // for (i = 0; i < layer; i++)
+    //     printf(TAB);
+    print_ast(node->right, layer + 1);
 }
 
 int main()
 {
-    char str[] = "(123/3+456^2)*9.4";
-    u8 res = parse_to_token_list(str);
-
+    char str[] = "2^sin(-3^4^5)";
+    int res = parse_to_token_list(str);
+    if (res == -1)
+    {
+        return -1;
+    }
+    printf("Tokens:\n");
+    print_tokens(res);
+    // AST_Node *node = parse_to_ast(0);
+    AST_Node *node = expr_bp(0);
+    printf("\nAST:\n");
+    print_ast(node, 0);
     return 0;
 }
