@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <assert.h>
+#include <math.h>
 
 #define TAB "│ "
 #define FOLD_TAB "├─"
@@ -60,6 +61,13 @@ typedef struct Token
     usize value;
 } Token;
 
+// a/b +-a
+typedef struct FractionData
+{
+    int a; // symbol
+    int b; // b > 0
+} FractionData;
+
 Token token_list[1024] = {0};
 int tokens_len = 0;
 int gtoken_ind = 0;
@@ -78,6 +86,19 @@ Token *next_token()
     Token *temp = &token_list[gtoken_ind];
     gtoken_ind++;
     return temp;
+}
+
+Token *dump_token(Token *t)
+{
+    Token *new_token = malloc(sizeof(Token));
+    new_token->type = t->type;
+    new_token->value = t->value;
+}
+
+void copy_token(Token *from, Token *to)
+{
+    to->type = from->type;
+    to->value = from->value;
 }
 
 // adja_char_stynax[i][j] 是否合法
@@ -149,6 +170,8 @@ u8 str_is_int_or_float(char *str)
         }
         switch (str[1])
         {
+        case '.':
+            return 5; // 浮点数
         case 'b':
             return 4; // 二进制整数
         case 'B':
@@ -347,7 +370,7 @@ void print_terimal_token(Token *t, bool newline)
         break;
     case Float:
         float *p = (float *)&t->value;
-        printf("Float(%f)", *p);
+        printf("Float(%.8f)", *p);
         break;
     case Var:
         printf("Var(%s)", (char *)t->value);
@@ -482,7 +505,7 @@ AST_Node *expr_bp(int min_bp)
     if (temp_token->type == Int || temp_token->type == Float || temp_token->type == Var)
     {
         // Atom
-        lhs->token = temp_token;
+        lhs->token = dump_token(temp_token);
         lhs->left = lhs->right = NULL;
     }
     else if (temp_token->type == LeftParenthesis)
@@ -496,8 +519,9 @@ AST_Node *expr_bp(int min_bp)
         // 函数
         assert(next_token()->type == LeftParenthesis);
         rhs = expr_bp(0);
+        assert(next_token()->type == RightParenthesis);
         // lhs = &AST_Node{token: func, left: rhs, right: NULL}
-        lhs->token = temp_token;
+        lhs->token = dump_token(temp_token);
         lhs->left = rhs;
         lhs->right = NULL;
     }
@@ -507,7 +531,7 @@ AST_Node *expr_bp(int min_bp)
         BindingPower temp_bp = prefix_binding_power(temp_token->type);
         rhs = expr_bp(temp_bp.right);
         // lhs = &AST_Node{token: op, left: rhs, right: NULL}
-        lhs->token = temp_token;
+        lhs->token = dump_token(temp_token);
         lhs->left = rhs;
         lhs->right = NULL;
     }
@@ -528,7 +552,7 @@ AST_Node *expr_bp(int min_bp)
 
             // lhs = &AST_Node{token: op, left: lhs, right: rhs}
             AST_Node *temp = malloc(sizeof(AST_Node));
-            temp->token = op;
+            temp->token = dump_token(op);
             temp->left = lhs;
             temp->right = rhs;
             lhs = temp;
@@ -627,14 +651,59 @@ void print_ast(AST_Node *node, int layer)
     print_ast(node->right, layer + 1);
 }
 
-void copy_token(Token *from, Token *to)
+void cast_int2float_inplace(Token *t)
 {
-    to->type = from->type;
-    to->value = from->value;
+    assert(t->type == Int);
+    float *p = (float *)&t->value;
+    *p = (float)t->value;
+    t->type = Float;
 }
 
-AST_Node *add_polymorphism(const AST_Node *base_l, const AST_Node *base_r)
+// left inplace return false when error
+bool powii_inplace(Token *l_int, Token *r_int)
 {
+    int li, ri, i;
+    bool neg = false;
+    li = (int)l_int->value;
+    ri = (int)r_int->value;
+    if (li == 0 && ri <= 0)
+        // 0^0
+        // 0^(-x) (x>0)
+        return false;
+    if (li == 1)
+    {
+        return true;
+    }
+    if (ri < 0)
+    {
+        ri = -ri;
+        neg = true;
+    }
+    // assert(ri > 0);
+    int acc = 1;
+    for (i = 0; i < ri; i++)
+    {
+        acc *= li;
+    }
+    li = acc;
+    if (neg)
+    {
+        float *p = (float *)&l_int->value;
+        *p = 1. / (float)li;
+        l_int->type = Float;
+    }
+    else
+    {
+        int *p = (int *)&l_int->value;
+        *p = li;
+    }
+    return true;
+}
+
+AST_Node *op_polymorphism(const AST_Node *base_l, const AST_Node *base_r, TokenType op)
+{
+    if (base_l == NULL || base_r == NULL)
+        return NULL;
     AST_Node *res;
     res = malloc(sizeof(AST_Node));
     res->left = res->right = NULL;
@@ -643,30 +712,53 @@ AST_Node *add_polymorphism(const AST_Node *base_l, const AST_Node *base_r)
     r = malloc(sizeof(Token));
     copy_token(base_l->token, l);
     copy_token(base_r->token, r);
+    // 类型转换
+    if (l->type == Float && r->type == Int)
+    {
+        cast_int2float_inplace(r);
+    }
+    else if (l->type == Int && r->type == Float)
+    {
+        cast_int2float_inplace(l);
+    }
+
+    // 计算
     if (l->type == Float && r->type == Float)
     {
         float *lp, *rp;
         lp = (float *)&l->value;
         rp = (float *)&r->value;
-        *lp += *rp;
-        free(r);
-        res->token = l;
-        return res;
-    }
-    else if (l->type == Int && r->type == Float)
-    {
-        float *rp;
-        rp = (float *)&r->value;
-        *rp += (int)l->value;
-        free(l);
-        res->token = r;
-        return res;
-    }
-    else if (l->type == Float && r->type == Int)
-    {
-        float *lp;
-        lp = (float *)&l->value;
-        *lp += (int)r->value;
+        switch (op)
+        {
+        case Add:
+            *lp += *rp;
+            break;
+        case Sub:
+            *lp -= *rp;
+            break;
+        case Mul:
+            *lp *= *rp;
+            break;
+        case Div:
+            // error x/0
+            if (*rp == 0.)
+                return NULL;
+            *lp /= *rp;
+            break;
+        case Mod:
+            // error x%0
+            if (*rp == 0.)
+                return 0;
+            *lp = fmod(*lp, *rp);
+            break;
+        case Pow:
+            // 实数幂运算不封闭
+            *lp = powf(*lp, *rp);
+            break;
+        default:
+            return NULL;
+        }
+
         free(r);
         res->token = l;
         return res;
@@ -674,7 +766,42 @@ AST_Node *add_polymorphism(const AST_Node *base_l, const AST_Node *base_r)
     else if (l->type == Int && r->type == Int)
     {
         int *p = (int *)&l->value;
-        *p = (int)l->value + (int)r->value;
+        switch (op)
+        {
+        case Add:
+            *p = (int)l->value + (int)r->value;
+            break;
+        case Sub:
+            *p = (int)l->value - (int)r->value;
+            break;
+        case Mul:
+            *p = (int)l->value * (int)r->value;
+            break;
+        case Div:
+            // 整数除法不封闭
+            // error x/0
+            if ((int)r->value == 0)
+                return NULL;
+            *p = (int)l->value / (int)r->value;
+            break;
+        case Mod:
+            // error x%0
+            if ((int)r->value == 0)
+                return NULL;
+            *p = (int)l->value % (int)r->value;
+            break;
+        case Pow:
+            // 整数非负指数幂运算封闭
+            // 整数负指数幂运算不封闭
+            // error 0^0 0^(-x) (x<0 in Z)
+            if (!powii_inplace(l, r))
+                // pow error
+                return NULL;
+            break;
+        default:
+            break;
+        }
+
         free(r);
         res->token = l;
         return res;
@@ -684,24 +811,101 @@ AST_Node *add_polymorphism(const AST_Node *base_l, const AST_Node *base_r)
         return NULL;
     }
 }
+void neg_inplace(AST_Node *node)
+{
+    // 从左子节点中取出记号的所有权移交到本节点上
+    free(node->token);
+    node->token = node->left->token;
+    // 删除左子节点
+    free(node->left);
+    node->left = NULL;
+    if (node->token->type == Float)
+    {
+        float *p = (float *)&node->token->value;
+        *p = -*p;
+    }
+    else if (node->token->type == Int)
+    {
+        int *p = (int *)&node->token->value;
+        *p = -*p;
+    }
+    else
+        assert(false);
+}
+
+int try_sqrti(int x)
+{
+    int i;
+    if (x == 0)
+        return 0;
+    for (i = 1;; i += 2)
+    {
+        x -= i;
+        if (x < 0)
+            return -1;
+        else if (x == 0)
+        {
+            return (i + 1) / 2;
+        }
+    }
+}
+
+bool sqrt_inp(Token *x)
+{
+    if (x->type == Int)
+    {
+        if ((int)x->value < 0)
+            return false;
+        int temp = try_sqrti((int)x->value);
+        if (temp == -1)
+            cast_int2float_inplace(x);
+        else
+        {
+            int *ip = (int *)&x->value;
+            *ip = temp;
+            return true;
+        }
+    }
+    float *p = (float *)&x->value;
+    *p = sqrtf(*p);
+    if (*p == NAN)
+        return false;
+    return true;
+}
+
+bool func_call_inp(AST_Node *fn_node)
+{
+    assert(fn_node->left->token->type == Int || fn_node->left->token->type == Float || fn_node->left->token->type == Fraction);
+    if (strcmp((char *)fn_node->token->value, "sqrt") == 0)
+    {
+        sqrt_inp(fn_node->left->token);
+        free(fn_node->token);
+        fn_node->token = fn_node->left->token;
+        free(fn_node->left);
+        fn_node->left = NULL;
+        return true;
+    }
+    return false;
+}
 
 AST_Node *recu_calc(AST_Node *node)
 {
-    if (node->token->type == Int || node->token->type == Float || node->token->type == Var)
+    if (node == NULL)
+        return NULL;
+    if (node->token->type == Neg)
+        neg_inplace(node);
+    if (node->token->type == Func)
     {
-        // 基本情况
+        node->left = recu_calc(node->left);
+        if (!func_call_inp(node))
+            return NULL;
         return node;
     }
+    if (node->token->type == Int || node->token->type == Float)
+        // 基本情况
+        return node;
     // 递归情况
-
-    switch (node->token->type)
-    {
-    case Add:
-        return add_polymorphism(recu_calc(node->left), recu_calc(node->right));
-
-    default:
-        break;
-    }
+    return op_polymorphism(recu_calc(node->left), recu_calc(node->right), node->token->type);
 }
 
 Token *calc(AST_Node *node)
@@ -713,12 +917,15 @@ Token *calc(AST_Node *node)
         // 方程
         return NULL;
     }
-    return recu_calc(node)->token;
+    AST_Node *res = recu_calc(node);
+    if (res == NULL)
+        return NULL;
+    return res->token;
 }
 
 int main()
 {
-    char str[] = "1+2+3";
+    char str[] = "sqrt(0)-1";
     int state_code = parse_to_token_list(str);
     if (state_code == -1)
     {
