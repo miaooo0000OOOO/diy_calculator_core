@@ -202,6 +202,22 @@ u8 str_is_int_or_float(char *str)
     return 2; // 十进制整数
 }
 
+unsigned long strbintol(char str[], usize len)
+{
+    assert(len > 2);
+    assert(str[0] == '0' && str[1] == 'b' || str[1] == 'B');
+    unsigned long n = 0;
+    for (usize i = 2; i < len; i++)
+    {
+        if (str[i] != '0' && str[i] != '1')
+            break;
+        n *= 2;
+        if (str[i] == '1')
+            n += 1;
+    }
+    return n;
+}
+
 int parse_to_token_list(char *str)
 {
     usize len = strlen(str);
@@ -291,6 +307,10 @@ int parse_to_token_list(char *str)
                 case 0: // Err
                     return -1;
                     break;
+                case 4:
+                    token_list[j].type = Int;
+                    token_list[j].value = strbintol(&str[i], len - i);
+                    break;
                 case 5: // 浮点数
                     token_list[j].type = Float;
                     float *p = (float *)&token_list[j].value;
@@ -370,7 +390,7 @@ void print_terimal_token(Token *t, bool newline)
         break;
     case Float:
         float *p = (float *)&t->value;
-        printf("Float(%.8f)", *p);
+        printf("Float(%f)", *p);
         break;
     case Var:
         printf("Var(%s)", (char *)t->value);
@@ -655,7 +675,7 @@ void cast_int2float_inplace(Token *t)
 {
     assert(t->type == Int);
     float *p = (float *)&t->value;
-    *p = (float)t->value;
+    *p = (int)t->value;
     t->type = Float;
 }
 
@@ -811,6 +831,7 @@ AST_Node *op_polymorphism(const AST_Node *base_l, const AST_Node *base_r, TokenT
         return NULL;
     }
 }
+
 void neg_inplace(AST_Node *node)
 {
     // 从左子节点中取出记号的所有权移交到本节点上
@@ -879,13 +900,84 @@ bool func_call_inp(AST_Node *fn_node)
     if (strcmp((char *)fn_node->token->value, "sqrt") == 0)
     {
         sqrt_inp(fn_node->left->token);
-        free(fn_node->token);
-        fn_node->token = fn_node->left->token;
-        free(fn_node->left);
-        fn_node->left = NULL;
-        return true;
     }
-    return false;
+    else if (strcmp((char *)fn_node->token->value, "sin") == 0)
+    {
+        if (fn_node->left->token->type == Int)
+            cast_int2float_inplace(fn_node->left->token);
+        float *fp = (float *)&fn_node->left->token->value;
+        *fp = sin(*fp);
+    }
+    else if (strcmp((char *)fn_node->token->value, "cos") == 0)
+    {
+        if (fn_node->left->token->type == Int)
+            cast_int2float_inplace(fn_node->left->token);
+        float *fp = (float *)&fn_node->left->token->value;
+        *fp = cos(*fp);
+    }
+    else if (strcmp((char *)fn_node->token->value, "tan") == 0)
+    {
+        if (fn_node->left->token->type == Int)
+            cast_int2float_inplace(fn_node->left->token);
+        float *fp = (float *)&fn_node->left->token->value;
+        *fp = tan(*fp);
+    }
+    else if (strcmp((char *)fn_node->token->value, "cot") == 0)
+    {
+        if (fn_node->left->token->type == Int)
+            cast_int2float_inplace(fn_node->left->token);
+        float *fp = (float *)&fn_node->left->token->value;
+        *fp = tan(*fp);
+        if (*fp == 0)
+            return false;
+        *fp = 1 / *fp;
+    }
+    else if (strcmp((char *)fn_node->token->value, "ln") == 0)
+    {
+        // e为底
+        if (fn_node->left->token->type == Int)
+            cast_int2float_inplace(fn_node->left->token);
+        float *fp = (float *)&fn_node->left->token->value;
+        if (*fp < 0)
+            return false;
+        *fp = log(*fp);
+    }
+    else if (strcmp((char *)fn_node->token->value, "log") == 0)
+    {
+        // 10为底
+        if (fn_node->left->token->type == Int)
+            cast_int2float_inplace(fn_node->left->token);
+        float *fp = (float *)&fn_node->left->token->value;
+        if (*fp < 0)
+            return false;
+        *fp = log10(*fp);
+    }
+    else if (strcmp((char *)fn_node->token->value, "abs") == 0)
+    {
+        if (fn_node->left->token->type == Int)
+        {
+            int *ip = (int *)&fn_node->left->token->value;
+            *ip = abs(*ip);
+        }
+        else if (fn_node->left->token->type == Float)
+        {
+            float *fp = (float *)&fn_node->left->token->value;
+            *fp = fabs(*fp);
+        }
+        else
+        {
+            return false;
+        }
+    }
+    else
+    {
+        return false;
+    }
+    free(fn_node->token);
+    fn_node->token = fn_node->left->token;
+    free(fn_node->left);
+    fn_node->left = NULL;
+    return true;
 }
 
 AST_Node *recu_calc(AST_Node *node)
@@ -925,7 +1017,7 @@ Token *calc(AST_Node *node)
 
 int main()
 {
-    char str[] = "sqrt(0)-1";
+    char str[] = "ln(abs(-3)^cos(-2))";
     int state_code = parse_to_token_list(str);
     if (state_code == -1)
     {
