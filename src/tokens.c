@@ -25,6 +25,24 @@ bool char_in_hex(const char c)
     return char_in_num(c) || 'a' <= c && c <= 'f' || 'A' <= c && c <= 'F';
 }
 
+// 返回拥有所有权的Token*
+Token *new_token_from_float(float x)
+{
+    Token *res = malloc(sizeof(Token));
+    res->type = Float;
+    res->v.f = x;
+    return res;
+}
+
+// 返回拥有所有权的Token*
+Token *new_token_from_int(int x)
+{
+    Token *res = malloc(sizeof(Token));
+    res->type = Int;
+    res->v.i = x;
+    return res;
+}
+
 // 返回Token的不可变引用
 // return NULL when out of index
 const Token *const peek_token()

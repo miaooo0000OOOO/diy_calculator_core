@@ -55,6 +55,8 @@ const Token *peek_token();
 Token *next_token();
 Token *dump_token(const Token *const t);
 void copy_token(const Token *const from, Token *const to);
+Token *new_token_from_float(float x);
+Token *new_token_from_int(int x);
 
 int parse_to_token_list(const char str[]);
 void print_terimal_token(const Token *const t, const bool newline);

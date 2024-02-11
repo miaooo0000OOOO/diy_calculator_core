@@ -30,6 +30,8 @@ AST_Node *transfrom_ast_and_free(AST_Node *f(const AST_Node *const node), AST_No
 // never return NULL
 Token *cast_int2float(const Token *const t)
 {
+    if (t->type == Float)
+        return dump_token(t);
     assert(t->type == Int);
     Token *res = malloc(sizeof(Token));
     res->v.f = (float)t->v.i;
@@ -109,7 +111,8 @@ AST_Node *op_polymorphism(const AST_Node *const base_l, const AST_Node *const ba
     assert(base_l != NULL && base_r != NULL);
     AST_Node *res, *ret;
     res = malloc(sizeof(AST_Node));
-    res->token = res->left = res->right = NULL;
+    res->left = res->right = NULL;
+    res->token = NULL;
     Token *l, *r;
     l = dump_token(base_l->token);
     r = dump_token(base_r->token);
@@ -408,7 +411,6 @@ AST_Node *func_call(const AST_Node *const fn_node)
 // return NULL when var not found
 Token *get_var_value(const char *name)
 {
-
     for (int i = 0; i < symbol_table_len; i++)
     {
         if (strcmp(symbol_table[i].name, name) == 0)
@@ -511,16 +513,29 @@ float calc_x_expr(const AST_Node *const node, float x)
     return t->v.f;
 }
 
-AST_Node *solve(const AST_Node *const node)
+AST_Node *solve(const AST_Node *const node, const Token *const initial_x)
 {
     assert(node != NULL);
     if (node->token->type != Eq)
     {
         return NULL;
     }
+    // assign x
     float x, y, y_, dydx;
-    printf("inital x: ");
-    scanf("%f", &x);
+    Token *temp;
+    if (initial_x == NULL)
+    {
+        temp = get_var_value("x");
+        assert(temp != NULL);
+        assert(temp->type == Float);
+        x = temp->v.f;
+        free(temp);
+    }
+    else
+    {
+        assert(initial_x->type == Float);
+        x = initial_x->v.f;
+    }
     for (int i = 0; i < 1000; i++)
     {
         y = get_delta(node, x - EPSILON);
@@ -550,4 +565,97 @@ AST_Node *solve(const AST_Node *const node)
     value_node->token->v.f = x;
     value_node->left = value_node->right = NULL;
     return eq;
+}
+
+float recu_solve_dichotomy_float(const AST_Node *const node, const Token *const left_x, const Token *const right_x)
+{
+}
+
+// x^y
+int simple_pow(const int x, const int y)
+{
+    int acc = 1;
+    int i = 0;
+    for (i = 0; i < y; i++)
+    {
+        acc *= x;
+    }
+    return acc;
+}
+
+AST_Node *ast_x_eq_float(float x)
+{
+    AST_Node *eq = malloc(sizeof(AST_Node));
+    AST_Node *x_node = malloc(sizeof(AST_Node));
+    AST_Node *value_node = malloc(sizeof(AST_Node));
+
+    eq->token = malloc(sizeof(Token));
+    eq->token->type = Eq;
+    eq->token->v.i = 0;
+    eq->left = x_node;
+    eq->right = value_node;
+    x_node->token = malloc(sizeof(Token));
+    x_node->token->type = Var;
+    x_node->token->v.p = "x";
+    x_node->left = x_node->right = NULL;
+    value_node->token = malloc(sizeof(Token));
+    value_node->token->type = Float;
+    value_node->token->v.f = x;
+    value_node->left = value_node->right = NULL;
+    return eq;
+}
+
+AST_Node *solve_dichotomy(const AST_Node *const node, const Token *const left_x, const Token *const right_x)
+{
+    assert(node != NULL && node->token->type == Eq);
+    assert(left_x != NULL && left_x->type == Float);
+    assert(right_x != NULL && right_x->type == Float);
+    float xl, xr, xm;
+    float step, l, r, m, res_x;
+    int i, j;
+    xl = left_x->v.f;
+    xr = right_x->v.f;
+    l = get_delta(node, xl);
+    r = get_delta(node, xr);
+    if (l * r > 0)
+        for (i = 1; i < 6; i++)
+        {
+            step = 1. / simple_pow(2, i);
+            for (j = 0; j < simple_pow(2, i); j += 2)
+            {
+                xr = xl + (step + step * j) * (xr - xl);
+                r = get_delta(node, xr);
+                if (l * r <= 0)
+                    break;
+            }
+        }
+    if (l == 0.)
+        return ast_x_eq_float(xl);
+    else if (r == 0.)
+    {
+        return ast_x_eq_float(xr);
+    }
+    if (l * r > 0)
+    {
+        // solution not found
+        return NULL;
+    }
+    for (i = 0; i < 1000; i++)
+    {
+        l = get_delta(node, xl);
+        r = get_delta(node, xr);
+        xm = (xl + xr) / 2.;
+        m = get_delta(node, xm);
+        if (xr - xl <= __FLT_MIN__ * 10 || m == 0.)
+            return ast_x_eq_float(xm);
+        if (l * m < 0)
+        {
+            xr = xm;
+        }
+        else
+        {
+            xl = xm;
+        }
+    }
+    return ast_x_eq_float(xm);
 }
