@@ -613,6 +613,7 @@ AST_Node *solve_dichotomy(const AST_Node *const node, const Token *const left_x,
     float xl, xr, xm;
     float step, l, r, m, res_x;
     int i, j;
+    bool break_out = false;
     xl = left_x->v.f;
     xr = right_x->v.f;
     l = get_delta(node, xl);
@@ -620,14 +621,19 @@ AST_Node *solve_dichotomy(const AST_Node *const node, const Token *const left_x,
     if (l * r > 0)
         for (i = 1; i < 6; i++)
         {
-            step = 1. / simple_pow(2, i);
+            step = (xr - xl) / simple_pow(2, i);
             for (j = 0; j < simple_pow(2, i); j += 2)
             {
-                xr = xl + (step + step * j) * (xr - xl);
+                xr = xl + (step + step * j);
                 r = get_delta(node, xr);
                 if (l * r <= 0)
+                {
+                    break_out = true;
                     break;
+                }
             }
+            if (break_out)
+                break;
         }
     if (l == 0.)
         return ast_x_eq_float(xl);
