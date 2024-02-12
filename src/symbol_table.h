@@ -12,8 +12,8 @@ typedef enum VarType
 
 typedef struct VarTableLine
 {
-    char *name;
     VarType type;
+    char *name;
     void *data;
 } VarTableLine;
 

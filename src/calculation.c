@@ -76,7 +76,7 @@ Token *powii(const Token *const l_int, const Token *const r_int)
     else
     {
         res->type = Int;
-        res->v.f = acc;
+        res->v.i = acc;
     }
     return res;
 }
@@ -619,7 +619,7 @@ AST_Node *solve_dichotomy(const AST_Node *const node, const Token *const left_x,
     l = get_delta(node, xl);
     r = get_delta(node, xr);
     if (l * r > 0)
-        for (i = 1; i < 6; i++)
+        for (i = 1; i < 8; i++)
         {
             step = (xr - xl) / simple_pow(2, i);
             for (j = 0; j < simple_pow(2, i); j += 2)
@@ -646,7 +646,7 @@ AST_Node *solve_dichotomy(const AST_Node *const node, const Token *const left_x,
         // solution not found
         return NULL;
     }
-    for (i = 0; i < 1000; i++)
+    for (i = 0; i < 100000; i++)
     {
         l = get_delta(node, xl);
         r = get_delta(node, xr);
@@ -663,5 +663,12 @@ AST_Node *solve_dichotomy(const AST_Node *const node, const Token *const left_x,
             xl = xm;
         }
     }
-    return ast_x_eq_float(xm);
+    if (xr - xl <= EPSILON)
+    {
+        return ast_x_eq_float(xm);
+    }
+    else
+    {
+        return NULL;
+    }
 }

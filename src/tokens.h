@@ -26,20 +26,20 @@ typedef enum TokenType
     Func,             // 函数
     Var,              // 变量
     Fraction          // 分数
-} TokenType;
+} TokenType;          // size 1B
 
 typedef union TokenValue
 {
     int i;
     float f;
     void *p;
-} TokenValue;
+} TokenValue; // size 4B
 
 typedef struct Token
 {
     TokenType type;
     TokenValue v;
-} Token;
+} Token; // size 8B
 
 extern Token token_list[1024];
 extern int tokens_len;
